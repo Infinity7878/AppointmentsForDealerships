@@ -1,0 +1,189 @@
+/* Container */
+.app-container {
+  max-width: 900px;
+  margin: 24px auto;
+  padding: 0 16px;
+  font-family: Arial, sans-serif;
+  color: #222;
+}
+
+/* Table header */
+.table-header {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  font-weight: bold;
+  border-bottom: 2px solid #ccc;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  text-align: center;
+}
+
+/* Table rows */
+.table-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border: 2px solid #000;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+  cursor: pointer;
+  position: relative;
+  text-align: center;
+  transition: background-color 0.2s ease;
+}
+
+/* Status colors */
+.row-helped {
+  background-color: #cce5ff;
+}
+
+.row-shipped {
+  background-color: #d4edda;
+}
+
+.row-pending {
+  background-color: #f1b0b7;
+}
+
+/* Popup menu */
+.popup-menu {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: white;
+  padding: 16px;
+  border-radius: 8px;
+  border: 2px solid #000;
+  z-index: 100;
+  display: flex;
+  gap: 12px;
+}
+
+.popup-menu button {
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+  transition: background-color 0.2s ease;
+}
+
+.popup-menu button:hover {
+  background-color: #2563eb;
+}
+
+/* Add appointment button */
+.add-btn {
+  margin-top: 24px;
+  background-color: #3b82f6;
+  color: white;
+  padding: 12px 24px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 1rem;
+  font-weight: bold;
+}
+
+/* Form container */
+.form-container {
+  margin-top: 24px;
+  padding: 24px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  display: grid;
+  grid-template-columns: 1fr 3fr;
+  gap: 12px 16px;
+  align-items: center;
+  max-width: 600px;
+}
+
+.form-container label {
+  font-weight: bold;
+  text-align: right;
+  padding-right: 8px;
+}
+
+.form-container input {
+  padding: 8px 12px;
+  font-size: 1rem;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Submit button */
+.submit-btn {
+  grid-column: 1 / -1;
+  margin-top: 16px;
+  background-color: #10b981;
+  color: white;
+  padding: 12px;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+.submit-btn:hover {
+  background-color: #059669;
+}
+
+/* End day button */
+.end-day-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: #dc3545;
+  color: white;
+  padding: 12px 24px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: bold;
+  font-size: 1rem;
+}
+
+/* Modal */
+.modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: white;
+  padding: 24px;
+  border: 2px solid #000;
+  border-radius: 8px;
+  z-index: 200;
+  width: 300px;
+  text-align: center;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
+.modal-buttons button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: none;
+  font-weight: bold;
+  cursor: pointer;
+  color: white;
+}
+
+.modal-buttons button:first-child {
+  background-color: #dc3545;
+}
+
+.modal-buttons button:last-child {
+  background-color: #6b7280;
+}
