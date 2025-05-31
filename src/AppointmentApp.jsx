@@ -1,15 +1,15 @@
 import React, { useState, useEffect, useRef } from "react";
-import { db } from "./firebase"; // make sure your firebase config is set up
 import {
   collection,
   addDoc,
   onSnapshot,
-  doc,
   updateDoc,
+  doc,
+  query,
+  orderBy,
   deleteDoc,
 } from "firebase/firestore";
-
-import "./AppointmentApp.css";
+import { db } from "./firebase"; // your firebase config + export db from there
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -22,20 +22,30 @@ export default function AppointmentApp() {
   const [showForm, setShowForm] = useState(false);
   const [showEndDayPopup, setShowEndDayPopup] = useState(false);
 
-  const popupRefs = useRef([]);
+  const popupRef = useRef([]);
   const endDayPopupRef = useRef(null);
   const endDayButtonRef = useRef(null);
   const rowRefs = useRef([]);
 
-  const appointmentsRef = collection(db, "appointments");
+  useEffect(() => {
+    // Subscribe to Firestore collection "appointments"
+    const q = query(collection(db, "appointments"), orderBy("time"));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const appointments = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        showPopup: false, // keep popup UI state local, not in Firestore
+      }));
+      setRows(appointments);
+    });
+    return () => unsubscribe();
+  }, []);
 
-  // Handle input changes
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Add appointment
   const addRow = async () => {
     if (
       !formData.client.trim() ||
@@ -43,68 +53,76 @@ export default function AppointmentApp() {
       !formData.advisor.trim() ||
       !formData.time.trim()
     ) {
-      alert("Please fill in all fields.");
+      alert("Please fill all fields.");
       return;
     }
-    await addDoc(appointmentsRef, {
-      ...formData,
-      status: "pending",
-    });
-    setFormData({ client: "", porter: "", advisor: "", time: "" });
-    setShowForm(false);
+    try {
+      await addDoc(collection(db, "appointments"), {
+        ...formData,
+        status: "pending",
+      });
+      setFormData({ client: "", porter: "", advisor: "", time: "" });
+      setShowForm(false);
+    } catch (error) {
+      console.error("Error adding appointment: ", error);
+    }
   };
 
-  // Toggle popup for each row
   const togglePopup = (index) => {
     setRows((prevRows) =>
-      prevRows.map((row, i) =>
-        i === index
-          ? { ...row, showPopup: !row.showPopup }
-          : { ...row, showPopup: false }
-      )
+      prevRows.map((row, i) => ({
+        ...row,
+        showPopup: i === index ? !row.showPopup : false,
+      }))
     );
   };
 
-  // Update appointment status
   const updateStatus = async (index, status) => {
-    const appointment = rows[index];
-    const appointmentDoc = doc(db, "appointments", appointment.id);
-    await updateDoc(appointmentDoc, { status });
-  };
-
-  // Row color based on status
-  const getRowClass = (status) => {
-    switch (status) {
-      case "helped":
-        return "row-helped";
-      case "shipped":
-        return "row-shipped";
-      default:
-        return "row-pending";
+    const row = rows[index];
+    if (!row?.id) return;
+    try {
+      const docRef = doc(db, "appointments", row.id);
+      await updateDoc(docRef, { status });
+      // local UI popup state will be updated on next onSnapshot trigger
+    } catch (error) {
+      console.error("Error updating status: ", error);
     }
   };
 
-  // End day button handler
-  const handleEndDay = () => {
-    setShowEndDayPopup(true);
+  const getRowStyle = (status) => {
+    switch (status) {
+      case "helped":
+        return "#cce5ff"; // Light blue
+      case "shipped":
+        return "#d4edda"; // Light green
+      case "pending":
+      default:
+        return "#f1b0b7"; // Light red
+    }
   };
 
-  // Confirm end day (delete all)
+  const handleEndDay = () => setShowEndDayPopup(true);
+
   const confirmEndDay = async (confirm) => {
     if (confirm) {
-      const deletions = rows.map((row) =>
-        deleteDoc(doc(db, "appointments", row.id))
-      );
-      await Promise.all(deletions);
+      try {
+        // Delete all appointments from Firestore (end of day reset)
+        const batchDeletes = rows.map((row) =>
+          deleteDoc(doc(db, "appointments", row.id))
+        );
+        await Promise.all(batchDeletes);
+      } catch (error) {
+        console.error("Error ending day: ", error);
+      }
     }
     setShowEndDayPopup(false);
   };
 
-  // Close popups if clicking outside
   const handleClickOutside = (e) => {
     if (
       endDayPopupRef.current &&
       !endDayPopupRef.current.contains(e.target) &&
+      endDayButtonRef.current &&
       !endDayButtonRef.current.contains(e.target)
     ) {
       setShowEndDayPopup(false);
@@ -112,13 +130,13 @@ export default function AppointmentApp() {
 
     rows.forEach((_, index) => {
       if (
-        popupRefs.current[index] &&
-        !popupRefs.current[index].contains(e.target) &&
+        popupRef.current[index] &&
+        !popupRef.current[index].contains(e.target) &&
         rowRefs.current[index] &&
         !rowRefs.current[index].contains(e.target)
       ) {
-        setRows((prevRows) =>
-          prevRows.map((row, i) =>
+        setRows((prev) =>
+          prev.map((row, i) =>
             i === index ? { ...row, showPopup: false } : row
           )
         );
@@ -131,53 +149,101 @@ export default function AppointmentApp() {
     return () => document.removeEventListener("click", handleClickOutside);
   }, [rows]);
 
-  useEffect(() => {
-    const unsubscribe = onSnapshot(appointmentsRef, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        showPopup: false,
-      }));
-      setRows(data);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
   return (
-    <div className="app-container">
-      <div className="table-header">
+    <div
+      style={{
+        maxWidth: 900,
+        margin: "20px auto",
+        fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
+        padding: 20,
+      }}
+    >
+      {/* Header */}
+      <h2 style={{ textAlign: "center", marginBottom: 24 }}>
+        Appointment Management
+      </h2>
+
+      {/* Column Labels */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1.5fr 1fr 1fr 1fr",
+          fontWeight: "bold",
+          borderBottom: "3px solid #333",
+          paddingBottom: 8,
+          marginBottom: 12,
+          textAlign: "center",
+        }}
+      >
         <div>Client</div>
         <div>Porter</div>
         <div>Advisor</div>
         <div>Appt. Time</div>
       </div>
 
+      {/* Rows */}
       {rows.map((row, index) => (
-        <div
-          key={row.id}
-          className={`table-row ${getRowClass(row.status)}`}
-          onClick={() => togglePopup(index)}
-          ref={(el) => (rowRefs.current[index] = el)}
-        >
-          <div>{row.client}</div>
-          <div>{row.porter}</div>
-          <div>{row.advisor}</div>
-          <div>{row.time}</div>
+        <div key={row.id} style={{ position: "relative", marginBottom: 12 }}>
+          <div
+            ref={(el) => (rowRefs.current[index] = el)}
+            onClick={() => togglePopup(index)}
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1.5fr 1fr 1fr 1fr",
+              gap: 16,
+              padding: "12px 16px",
+              backgroundColor: getRowStyle(row.status),
+              borderRadius: 8,
+              border: "2px solid #000",
+              cursor: "pointer",
+              userSelect: "none",
+              alignItems: "center",
+              transition: "background-color 0.3s",
+            }}
+          >
+            <div>{row.client}</div>
+            <div>{row.porter}</div>
+            <div>{row.advisor}</div>
+            <div>{row.time}</div>
+          </div>
 
+          {/* Popup */}
           {row.showPopup && (
             <div
-              className="popup-menu"
-              ref={(el) => (popupRefs.current[index] = el)}
-              onClick={(e) => e.stopPropagation()}
+              ref={(el) => (popupRef.current[index] = el)}
+              style={{
+                position: "absolute",
+                top: "110%",
+                left: "50%",
+                transform: "translateX(-50%)",
+                backgroundColor: "#fff",
+                border: "2px solid #000",
+                borderRadius: 8,
+                padding: 16,
+                boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
+                display: "flex",
+                gap: 12,
+                zIndex: 100,
+                minWidth: 280,
+                justifyContent: "center",
+              }}
             >
-              <button onClick={() => updateStatus(index, "helped")}>
+              <button
+                onClick={() => updateStatus(index, "helped")}
+                style={buttonStyle("#007bff")}
+              >
                 With Advisor
               </button>
-              <button onClick={() => updateStatus(index, "shipped")}>
+              <button
+                onClick={() => updateStatus(index, "shipped")}
+                style={buttonStyle("#28a745")}
+              >
                 Ship
               </button>
-              <button onClick={() => updateStatus(index, "pending")}>
+              <button
+                onClick={() => updateStatus(index, "pending")}
+                style={buttonStyle("#f1b0b7")}
+              >
                 Needs Advisor
               </button>
             </div>
@@ -185,73 +251,199 @@ export default function AppointmentApp() {
         </div>
       ))}
 
+      {/* Add Appointment Button */}
       {!showForm && (
-        <button className="add-btn" onClick={() => setShowForm(true)}>
+        <button
+          onClick={() => setShowForm(true)}
+          style={{
+            marginTop: 24,
+            backgroundColor: "#3b82f6",
+            color: "white",
+            padding: "12px 24px",
+            border: "2px solid #000",
+            borderRadius: 8,
+            cursor: "pointer",
+            fontSize: 16,
+            boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+            transition: "background-color 0.3s",
+            display: "block",
+            marginLeft: "auto",
+          }}
+        >
           Add Appointment
         </button>
       )}
 
+      {/* Appointment Form */}
       {showForm && (
-        <div className="form-container">
-          <label>
-            Client:
-            <input
-              type="text"
-              name="client"
-              value={formData.client}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Porter:
-            <input
-              type="text"
-              name="porter"
-              value={formData.porter}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Advisor:
-            <input
-              type="text"
-              name="advisor"
-              value={formData.advisor}
-              onChange={handleChange}
-            />
-          </label>
-          <label>
-            Appt. Time:
-            <input
-              type="text"
-              name="time"
-              value={formData.time}
-              onChange={handleChange}
-            />
-          </label>
-          <button className="submit-btn" onClick={addRow}>
-            Submit Appointment
-          </button>
-        </div>
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            addRow();
+          }}
+          style={{
+            marginTop: 24,
+            backgroundColor: "#f9f9f9",
+            padding: 24,
+            border: "2px solid #000",
+            borderRadius: 12,
+            boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+            maxWidth: 600,
+            marginLeft: "auto",
+            marginRight: "auto",
+          }}
+        >
+          {["client", "porter", "advisor", "time"].map((field) => (
+            <div
+              key={field}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                marginBottom: 16,
+              }}
+            >
+              <label
+                htmlFor={field}
+                style={{ marginBottom: 6, fontWeight: "600", fontSize: 14 }}
+              >
+                {field === "time" ? "Appt. Time" : capitalize(field)}:
+              </label>
+              <input
+                id={field}
+                name={field}
+                type="text"
+                value={formData[field]}
+                onChange={handleChange}
+                style={{
+                  padding: 12,
+                  fontSize: 16,
+                  borderRadius: 8,
+                  border: "2px solid #000",
+                }}
+                required
+              />
+            </div>
+          ))}
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "flex-end",
+              gap: 12,
+            }}
+          >
+            <button
+              type="submit"
+              style={{
+                backgroundColor: "#3b82f6",
+                color: "white",
+                padding: "12px 24px",
+                border: "2px solid #000",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 16,
+                boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+                transition: "background-color 0.3s",
+              }}
+            >
+              Submit Appointment
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowForm(false)}
+              style={{
+                backgroundColor: "#6c757d",
+                color: "white",
+                padding: "12px 24px",
+                border: "2px solid #000",
+                borderRadius: 8,
+                cursor: "pointer",
+                fontSize: 16,
+                boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+                transition: "background-color 0.3s",
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </form>
       )}
 
+      {/* End Day Button */}
       <button
         ref={endDayButtonRef}
         onClick={handleEndDay}
-        className="end-day-btn"
+        style={{
+          position: "fixed",
+          bottom: 24,
+          right: 24,
+          backgroundColor: "#dc3545",
+          color: "white",
+          padding: "12px 24px",
+          border: "2px solid #000",
+          borderRadius: 8,
+          cursor: "pointer",
+          fontSize: 16,
+          boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+          transition: "background-color 0.3s",
+          zIndex: 101,
+        }}
       >
         End Day
       </button>
 
+      {/* End Day Confirmation Popup */}
       {showEndDayPopup && (
-        <div className="modal" ref={endDayPopupRef}>
-          <h3>Are you sure?</h3>
-          <div className="modal-buttons">
-            <button onClick={() => confirmEndDay(true)}>Yes</button>
-            <button onClick={() => confirmEndDay(false)}>No</button>
+        <div
+          ref={endDayPopupRef}
+          style={{
+            position: "fixed",
+            top: "50%",
+            left: "50%",
+            transform: "translate(-50%, -50%)",
+            backgroundColor: "#fff",
+            padding: 24,
+            border: "2px solid #000",
+            borderRadius: 8,
+            boxShadow: "0 4px 12px rgba(0,0,0,0.2)",
+            zIndex: 200,
+            width: 320,
+            textAlign: "center",
+          }}
+        >
+          <h3 style={{ marginBottom: 24 }}>
+            Are you sure you want to end the day?
+          </h3>
+          <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
+            <button
+              onClick={() => confirmEndDay(true)}
+              style={buttonStyle("#007bff")}
+            >
+              Yes
+            </button>
+            <button
+              onClick={() => confirmEndDay(false)}
+              style={buttonStyle("#6c757d")}
+            >
+              No
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 }
+
+// Helper styles and functions
+const buttonStyle = (bgColor) => ({
+  backgroundColor: bgColor,
+  color: "white",
+  padding: "8px 16px",
+  border: "2px solid #000",
+  borderRadius: 4,
+  cursor: "pointer",
+  transition: "background-color 0.3s",
+  fontWeight: "600",
+});
+
+const capitalize = (str) => str.charAt(0).toUpperCase() + str.slice(1);
