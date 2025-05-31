@@ -6,8 +6,9 @@ import {
   doc,
   addDoc,
   updateDoc,
+  deleteDoc,
 } from "firebase/firestore";
-import { db } from "./firebase";
+import { db } from "./firebase"; // your firestore config
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -24,17 +25,6 @@ export default function AppointmentApp() {
   const endDayPopupRef = useRef(null);
   const endDayButtonRef = useRef(null);
   const rowRefs = useRef([]);
-
-  const statusOptions = [
-    { label: "With Advisor", value: "helped", color: "#007bff" },
-    { label: "Ship", value: "shipped", color: "#28a745" },
-    { label: "Needs Advisor", value: "pending", color: "#f1b0b7" },
-    { label: "Left", value: "left", color: "#ffc107" },
-    { label: "No Show", value: "no_show", color: "#dc3545" },
-    { label: "Reschedule", value: "reschedule", color: "#6f42c1" },
-    { label: "Waiting", value: "waiting", color: "#20c997" },
-    { label: "Escalated", value: "escalated", color: "#6610f2" },
-  ];
 
   useEffect(() => {
     async function fetchAppointments() {
@@ -89,33 +79,37 @@ export default function AppointmentApp() {
     );
   };
 
-  const updateStatus = async (index, status) => {
+  const updateStatus = async (index, status, action) => {
     const row = rows[index];
+    const docRef = doc(db, "appointments", row.id);
+
     try {
-      const docRef = doc(db, "appointments", row.id);
-      await updateDoc(docRef, { status });
-      setRows((prevRows) =>
-        prevRows.map((r, i) =>
-          i === index ? { ...r, status, showPopup: false } : r
-        )
-      );
+      if (action === "delete") {
+        await deleteDoc(docRef);
+        setRows((prevRows) => prevRows.filter((_, i) => i !== index));
+      } else {
+        await updateDoc(docRef, { status });
+        setRows((prevRows) =>
+          prevRows.map((r, i) =>
+            i === index ? { ...r, status, showPopup: false } : r
+          )
+        );
+      }
     } catch (error) {
       console.error("Error updating status: ", error);
     }
   };
 
   const getRowStyle = (status) => {
-    const colorMap = {
-      helped: "#cce5ff",
-      shipped: "#d4edda",
-      pending: "#f1b0b7",
-      left: "#fff3cd",
-      no_show: "#f8d7da",
-      reschedule: "#e2e3f3",
-      waiting: "#d1f2eb",
-      escalated: "#e8daef",
-    };
-    return colorMap[status] || "#ffffff";
+    switch (status) {
+      case "helped":
+        return "#cce5ff";
+      case "shipped":
+        return "#d4edda";
+      case "pending":
+      default:
+        return "#f1b0b7";
+    }
   };
 
   const handleEndDay = () => setShowEndDayPopup(true);
@@ -242,20 +236,40 @@ export default function AppointmentApp() {
                 padding: 16,
                 boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
                 display: "flex",
-                flexWrap: "wrap",
-                gap: 8,
+                gap: 12,
                 zIndex: 100,
                 minWidth: 280,
                 justifyContent: "center",
               }}
             >
-              {statusOptions.map(({ label, value, color }) => (
+              {[
+                {
+                  label: "With Advisor",
+                  value: "helped",
+                  color: "#007bff",
+                  action: "update",
+                },
+                {
+                  label: "Shipped",
+                  value: "shipped",
+                  color: "#28a745",
+                  action: "delete",
+                },
+                {
+                  label: "Delete",
+                  value: "delete",
+                  color: "#dc3545",
+                  action: "delete",
+                },
+              ].map((option) => (
                 <button
-                  key={value}
-                  onClick={() => updateStatus(index, value)}
-                  style={buttonStyle(color)}
+                  key={option.label}
+                  onClick={() =>
+                    updateStatus(index, option.value, option.action)
+                  }
+                  style={buttonStyle(option.color)}
                 >
-                  {label}
+                  {option.label}
                 </button>
               ))}
             </div>
@@ -276,6 +290,7 @@ export default function AppointmentApp() {
             cursor: "pointer",
             fontSize: 16,
             boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+            transition: "background-color 0.3s",
             display: "block",
             marginLeft: "auto",
           }}
@@ -341,32 +356,13 @@ export default function AppointmentApp() {
               gap: 12,
             }}
           >
-            <button
-              type="submit"
-              style={{
-                backgroundColor: "#3b82f6",
-                color: "white",
-                padding: "12px 24px",
-                border: "2px solid #000",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontSize: 16,
-              }}
-            >
+            <button type="submit" style={buttonStyle("#3b82f6")}>
               Submit Appointment
             </button>
             <button
               type="button"
               onClick={() => setShowForm(false)}
-              style={{
-                backgroundColor: "#6c757d",
-                color: "white",
-                padding: "12px 24px",
-                border: "2px solid #000",
-                borderRadius: 8,
-                cursor: "pointer",
-                fontSize: 16,
-              }}
+              style={buttonStyle("#6c757d")}
             >
               Cancel
             </button>
@@ -388,6 +384,8 @@ export default function AppointmentApp() {
           borderRadius: 8,
           cursor: "pointer",
           fontSize: 16,
+          boxShadow: "0 4px 8px rgba(0,0,0,0.1)",
+          transition: "background-color 0.3s",
           zIndex: 101,
         }}
       >
