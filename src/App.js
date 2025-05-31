@@ -1,12 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   collection,
-  addDoc,
-  onSnapshot,
-  updateDoc,
+  getDocs,
+  writeBatch,
   doc,
+  addDoc,
 } from "firebase/firestore";
-import { db } from "./firebase"; // Make sure your firebase.js exports the Firestore instance as db
+import { db } from "./firebase"; // Make sure your Firestore is initialized here
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -24,27 +24,25 @@ export default function AppointmentApp() {
   const endDayButtonRef = useRef(null);
   const rowRefs = useRef([]);
 
+  // Load appointments from Firestore on mount
+  useEffect(() => {
+    async function fetchAppointments() {
+      const snapshot = await getDocs(collection(db, "appointments"));
+      const appointments = snapshot.docs.map((doc) => ({
+        id: doc.id,
+        ...doc.data(),
+        showPopup: false,
+      }));
+      setRows(appointments);
+    }
+    fetchAppointments();
+  }, []);
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
-  // Listen to Firestore collection and sync appointments to rows state
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(db, "appointments"),
-      (snapshot) => {
-        const appointments = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-        }));
-        setRows(appointments);
-      }
-    );
-    return unsubscribe;
-  }, []);
-
-  // Add new appointment to Firestore
   const addRow = async () => {
     if (
       !formData.client.trim() ||
@@ -55,12 +53,19 @@ export default function AppointmentApp() {
       alert("Please fill all fields.");
       return;
     }
+
+    // Add to Firestore
     try {
-      await addDoc(collection(db, "appointments"), {
+      const docRef = await addDoc(collection(db, "appointments"), {
         ...formData,
         status: "pending",
-        showPopup: false,
       });
+
+      // Add to local state with Firestore doc ID
+      setRows((prev) => [
+        ...prev,
+        { id: docRef.id, ...formData, status: "pending", showPopup: false },
+      ]);
       setFormData({ client: "", porter: "", advisor: "", time: "" });
       setShowForm(false);
     } catch (error) {
@@ -68,31 +73,30 @@ export default function AppointmentApp() {
     }
   };
 
-  // Update appointment status in Firestore
-  const updateStatus = async (index, status) => {
-    const appointment = rows[index];
-    if (!appointment?.id) return;
-
-    try {
-      const appointmentRef = doc(db, "appointments", appointment.id);
-      await updateDoc(appointmentRef, {
-        status,
-        showPopup: false,
-      });
-      // No need to update local state manually; onSnapshot syncs it
-    } catch (error) {
-      console.error("Error updating status: ", error);
-    }
-  };
-
   const togglePopup = (index) => {
-    // Toggle showPopup for clicked appointment locally (to avoid writing too often to Firestore)
     setRows((prevRows) =>
       prevRows.map((row, i) => ({
         ...row,
         showPopup: i === index ? !row.showPopup : false,
       }))
     );
+  };
+
+  // Update appointment status both locally and in Firestore
+  const updateStatus = async (index, status) => {
+    const row = rows[index];
+    try {
+      const docRef = doc(db, "appointments", row.id);
+      await docRef.update({ status }); // Firestore update
+
+      setRows((prevRows) =>
+        prevRows.map((r, i) =>
+          i === index ? { ...r, status, showPopup: false } : r
+        )
+      );
+    } catch (error) {
+      console.error("Error updating status: ", error);
+    }
   };
 
   const getRowStyle = (status) => {
@@ -109,26 +113,29 @@ export default function AppointmentApp() {
 
   const handleEndDay = () => setShowEndDayPopup(true);
 
+  // Batch delete all docs in "appointments" collection
+  async function batchDeleteAppointments() {
+    try {
+      const batch = writeBatch(db);
+      const snapshot = await getDocs(collection(db, "appointments"));
+      snapshot.forEach((docSnap) => {
+        batch.delete(doc(db, "appointments", docSnap.id));
+      });
+      await batch.commit();
+      console.log("All appointments deleted successfully.");
+    } catch (error) {
+      console.error("Error deleting appointments: ", error);
+    }
+  }
+
   const confirmEndDay = async (confirm) => {
     if (confirm) {
-      // Delete all appointments in Firestore (end day)
-      // Firestore batch deletes require a batch write; for simplicity, delete one-by-one here
-      try {
-        for (const appointment of rows) {
-          if (appointment.id) {
-            const appointmentRef = doc(db, "appointments", appointment.id);
-            await updateDoc(appointmentRef, { deleted: true }); // Mark as deleted instead of deleting if you want, or you can delete directly if you prefer
-          }
-        }
-        setRows([]); // Clear local state
-      } catch (error) {
-        console.error("Error ending day: ", error);
-      }
+      await batchDeleteAppointments();
+      setRows([]);
     }
     setShowEndDayPopup(false);
   };
 
-  // Click outside popup to close popups
   const handleClickOutside = (e) => {
     if (
       endDayPopupRef.current &&
@@ -169,12 +176,10 @@ export default function AppointmentApp() {
         padding: 20,
       }}
     >
-      {/* Header */}
       <h2 style={{ textAlign: "center", marginBottom: 24 }}>
         Appointment Management
       </h2>
 
-      {/* Column Labels */}
       <div
         style={{
           display: "grid",
@@ -192,12 +197,8 @@ export default function AppointmentApp() {
         <div>Appt. Time</div>
       </div>
 
-      {/* Rows */}
       {rows.map((row, index) => (
-        <div
-          key={row.id || index}
-          style={{ position: "relative", marginBottom: 12 }}
-        >
+        <div key={row.id} style={{ position: "relative", marginBottom: 12 }}>
           <div
             ref={(el) => (rowRefs.current[index] = el)}
             onClick={() => togglePopup(index)}
@@ -221,7 +222,6 @@ export default function AppointmentApp() {
             <div>{row.time}</div>
           </div>
 
-          {/* Popup */}
           {row.showPopup && (
             <div
               ref={(el) => (popupRef.current[index] = el)}
@@ -265,7 +265,6 @@ export default function AppointmentApp() {
         </div>
       ))}
 
-      {/* Add Appointment Button */}
       {!showForm && (
         <button
           onClick={() => setShowForm(true)}
@@ -288,7 +287,6 @@ export default function AppointmentApp() {
         </button>
       )}
 
-      {/* Appointment Form */}
       {showForm && (
         <form
           onSubmit={(e) => {
@@ -383,7 +381,6 @@ export default function AppointmentApp() {
         </form>
       )}
 
-      {/* End Day Button */}
       <button
         ref={endDayButtonRef}
         onClick={handleEndDay}
@@ -406,7 +403,6 @@ export default function AppointmentApp() {
         End Day
       </button>
 
-      {/* End Day Confirmation Popup */}
       {showEndDayPopup && (
         <div
           ref={endDayPopupRef}
