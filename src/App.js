@@ -103,12 +103,12 @@ export default function AppointmentApp() {
   const getRowStyle = (status) => {
     switch (status) {
       case "helped":
-        return "#cce5ff";
+        return "#cce5ff"; // blue
       case "shipped":
-        return "#d4edda";
+        return "#d4edda"; // green
       case "pending":
       default:
-        return "#f1b0b7";
+        return "#f8d7da"; // red
     }
   };
 
@@ -238,7 +238,8 @@ export default function AppointmentApp() {
                 display: "flex",
                 gap: 12,
                 zIndex: 100,
-                minWidth: 280,
+                minWidth: 320,
+                flexWrap: "wrap",
                 justifyContent: "center",
               }}
             >
@@ -250,15 +251,21 @@ export default function AppointmentApp() {
                   action: "update",
                 },
                 {
-                  label: "Shipped",
+                  label: "Ship",
                   value: "shipped",
                   color: "#28a745",
-                  action: "delete",
+                  action: "update",
+                },
+                {
+                  label: "Needs Advisor",
+                  value: "pending",
+                  color: "#dc3545",
+                  action: "update",
                 },
                 {
                   label: "Delete",
                   value: "delete",
-                  color: "#dc3545",
+                  color: "#6c757d",
                   action: "delete",
                 },
               ].map((option) => (
