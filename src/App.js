@@ -25,7 +25,11 @@ export default function AppointmentApp() {
   const endDayPopupRef = useRef(null);
   const endDayButtonRef = useRef(null);
   const rowRefs = useRef([]);
+  const [theme, setTheme] = useState("light");
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+  };
   useEffect(() => {
     async function fetchAppointments() {
       const snapshot = await getDocs(collection(db, "appointments"));

@@ -174,8 +174,27 @@ export default function AppointmentApp() {
         margin: "20px auto",
         fontFamily: "'Segoe UI', Tahoma, Geneva, Verdana, sans-serif",
         padding: 20,
+        backgroundColor: theme === "dark" ? "#1e1e1e" : "#ffffff",
+        color: theme === "dark" ? "#f0f0f0" : "#000000",
+        minHeight: "100vh",
+        transition: "all 0.3s ease",
       }}
     >
+      <button
+        onClick={toggleTheme}
+        style={{
+          marginBottom: 16,
+          padding: "8px 16px",
+          borderRadius: 6,
+          border: "2px solid #000",
+          backgroundColor: theme === "dark" ? "#444" : "#eee",
+          color: theme === "dark" ? "#fff" : "#000",
+          cursor: "pointer",
+          float: "right",
+        }}
+      >
+        {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
+      </button>
       <h2 style={{ textAlign: "center", marginBottom: 24 }}>
         Appointment Management
       </h2>
