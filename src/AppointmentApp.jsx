@@ -1,15 +1,22 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
+  getFirestore,
   collection,
   addDoc,
   onSnapshot,
-  updateDoc,
-  doc,
   query,
   orderBy,
-  deleteDoc,
+  writeBatch,
+  getDocs,
 } from "firebase/firestore";
-import { db } from "./firebase"; // your firebase config + export db from there
+import { initializeApp } from "firebase/app";
+
+// Initialize Firebase app (replace with your config)
+const firebaseConfig = {
+  // your firebase config here
+};
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -28,15 +35,15 @@ export default function AppointmentApp() {
   const rowRefs = useRef([]);
 
   useEffect(() => {
-    // Subscribe to Firestore collection "appointments"
+    // Subscribe to appointments collection and listen for changes
     const q = query(collection(db, "appointments"), orderBy("time"));
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      const appointments = snapshot.docs.map((doc) => ({
+      const data = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
-        showPopup: false, // keep popup UI state local, not in Firestore
+        showPopup: false,
       }));
-      setRows(appointments);
+      setRows(data);
     });
     return () => unsubscribe();
   }, []);
@@ -46,6 +53,7 @@ export default function AppointmentApp() {
     setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
+  // Add appointment to Firestore
   const addRow = async () => {
     if (
       !formData.client.trim() ||
@@ -56,15 +64,47 @@ export default function AppointmentApp() {
       alert("Please fill all fields.");
       return;
     }
+
     try {
       await addDoc(collection(db, "appointments"), {
-        ...formData,
+        client: formData.client,
+        porter: formData.porter,
+        advisor: formData.advisor,
+        time: formData.time,
         status: "pending",
       });
       setFormData({ client: "", porter: "", advisor: "", time: "" });
       setShowForm(false);
     } catch (error) {
-      console.error("Error adding appointment: ", error);
+      alert("Error adding appointment: " + error.message);
+    }
+  };
+
+  // Update appointment status in Firestore
+  const updateStatus = async (index, status) => {
+    try {
+      const row = rows[index];
+      const docRef = collection(db, "appointments").doc(row.id);
+      // Firestore v9 modular uses doc() helper to get a doc ref
+      import("firebase/firestore").then(({ doc, updateDoc }) => {
+        const docReference = doc(db, "appointments", row.id);
+        updateDoc(docReference, { status });
+      });
+    } catch (error) {
+      alert("Error updating status: " + error.message);
+    }
+  };
+
+  // Remove appointment document from Firestore and update UI
+  const removeRow = async (index) => {
+    try {
+      const row = rows[index];
+      import("firebase/firestore").then(({ doc, deleteDoc }) => {
+        const docReference = doc(db, "appointments", row.id);
+        deleteDoc(docReference);
+      });
+    } catch (error) {
+      alert("Error removing appointment: " + error.message);
     }
   };
 
@@ -75,18 +115,6 @@ export default function AppointmentApp() {
         showPopup: i === index ? !row.showPopup : false,
       }))
     );
-  };
-
-  const updateStatus = async (index, status) => {
-    const row = rows[index];
-    if (!row?.id) return;
-    try {
-      const docRef = doc(db, "appointments", row.id);
-      await updateDoc(docRef, { status });
-      // local UI popup state will be updated on next onSnapshot trigger
-    } catch (error) {
-      console.error("Error updating status: ", error);
-    }
   };
 
   const getRowStyle = (status) => {
@@ -105,15 +133,13 @@ export default function AppointmentApp() {
 
   const confirmEndDay = async (confirm) => {
     if (confirm) {
-      try {
-        // Delete all appointments from Firestore (end of day reset)
-        const batchDeletes = rows.map((row) =>
-          deleteDoc(doc(db, "appointments", row.id))
-        );
-        await Promise.all(batchDeletes);
-      } catch (error) {
-        console.error("Error ending day: ", error);
-      }
+      // Batch delete all appointments
+      const batch = writeBatch(db);
+      const snapshot = await getDocs(collection(db, "appointments"));
+      snapshot.forEach((doc) => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
     }
     setShowEndDayPopup(false);
   };
@@ -224,7 +250,7 @@ export default function AppointmentApp() {
                 display: "flex",
                 gap: 12,
                 zIndex: 100,
-                minWidth: 280,
+                minWidth: 320,
                 justifyContent: "center",
               }}
             >
@@ -245,6 +271,12 @@ export default function AppointmentApp() {
                 style={buttonStyle("#f1b0b7")}
               >
                 Needs Advisor
+              </button>
+              <button
+                onClick={() => removeRow(index)}
+                style={buttonStyle("#198754")}
+              >
+                Shipped ✓
               </button>
             </div>
           )}
