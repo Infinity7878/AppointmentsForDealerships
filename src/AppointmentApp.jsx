@@ -1,25 +1,14 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  getFirestore,
   collection,
-  addDoc,
-  onSnapshot,
-  query,
-  orderBy,
-  writeBatch,
   getDocs,
+  writeBatch,
   doc,
+  addDoc,
   updateDoc,
   deleteDoc,
 } from "firebase/firestore";
-import { initializeApp } from "firebase/app";
-
-// Initialize Firebase app (replace with your config)
-const firebaseConfig = {
-  // your firebase config here
-};
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+import { db } from "./firebase"; // your firestore config
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -31,6 +20,7 @@ export default function AppointmentApp() {
   });
   const [showForm, setShowForm] = useState(false);
   const [showEndDayPopup, setShowEndDayPopup] = useState(false);
+  const [theme, setTheme] = useState("light");
 
   const popupRef = useRef([]);
   const endDayPopupRef = useRef(null);
@@ -38,16 +28,16 @@ export default function AppointmentApp() {
   const rowRefs = useRef([]);
 
   useEffect(() => {
-    const q = query(collection(db, "appointments"), orderBy("time"));
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const data = snapshot.docs.map((doc) => ({
+    async function fetchAppointments() {
+      const snapshot = await getDocs(collection(db, "appointments"));
+      const appointments = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
         showPopup: false,
       }));
-      setRows(data);
-    });
-    return () => unsubscribe();
+      setRows(appointments);
+    }
+    fetchAppointments();
   }, []);
 
   const handleChange = (e) => {
@@ -65,39 +55,19 @@ export default function AppointmentApp() {
       alert("Please fill all fields.");
       return;
     }
-
     try {
-      await addDoc(collection(db, "appointments"), {
-        client: formData.client,
-        porter: formData.porter,
-        advisor: formData.advisor,
-        time: formData.time,
+      const docRef = await addDoc(collection(db, "appointments"), {
+        ...formData,
         status: "pending",
       });
+      setRows((prev) => [
+        ...prev,
+        { id: docRef.id, ...formData, status: "pending", showPopup: false },
+      ]);
       setFormData({ client: "", porter: "", advisor: "", time: "" });
       setShowForm(false);
     } catch (error) {
-      alert("Error adding appointment: " + error.message);
-    }
-  };
-
-  const updateStatus = async (index, status) => {
-    try {
-      const row = rows[index];
-      const docReference = doc(db, "appointments", row.id);
-      await updateDoc(docReference, { status });
-    } catch (error) {
-      alert("Error updating status: " + error.message);
-    }
-  };
-
-  const removeRow = async (index) => {
-    try {
-      const row = rows[index];
-      const docReference = doc(db, "appointments", row.id);
-      await deleteDoc(docReference);
-    } catch (error) {
-      alert("Error removing appointment: " + error.message);
+      console.error("Error adding appointment: ", error);
     }
   };
 
@@ -110,28 +80,63 @@ export default function AppointmentApp() {
     );
   };
 
+  const updateStatus = async (index, status) => {
+    const row = rows[index];
+    try {
+      const docRef = doc(db, "appointments", row.id);
+      await updateDoc(docRef, { status });
+      setRows((prevRows) =>
+        prevRows.map((r, i) =>
+          i === index ? { ...r, status, showPopup: false } : r
+        )
+      );
+    } catch (error) {
+      console.error("Error updating status: ", error);
+    }
+  };
+
+  const deleteRow = async (index) => {
+    const row = rows[index];
+    try {
+      await deleteDoc(doc(db, "appointments", row.id));
+      setRows((prevRows) => prevRows.filter((_, i) => i !== index));
+    } catch (error) {
+      console.error("Error deleting appointment: ", error);
+    }
+  };
+
   const getRowStyle = (status) => {
     switch (status) {
       case "helped":
-        return "#cce5ff"; // Light blue
+        return theme === "dark" ? "#2a4d8c" : "#cce5ff"; // blue-ish
       case "shipped":
-        return "#d4edda"; // Light green
+        return theme === "dark" ? "#2d5034" : "#d4edda"; // green-ish
       case "pending":
       default:
-        return "#f1b0b7"; // Light red
+        return theme === "dark" ? "#6b2f3a" : "#f1b0b7"; // red-ish
     }
   };
 
   const handleEndDay = () => setShowEndDayPopup(true);
 
-  const confirmEndDay = async (confirm) => {
-    if (confirm) {
+  async function batchDeleteAppointments() {
+    try {
       const batch = writeBatch(db);
       const snapshot = await getDocs(collection(db, "appointments"));
       snapshot.forEach((docSnap) => {
-        batch.delete(docSnap.ref);
+        batch.delete(doc(db, "appointments", docSnap.id));
       });
       await batch.commit();
+      console.log("All appointments deleted successfully.");
+    } catch (error) {
+      console.error("Error deleting appointments: ", error);
+    }
+  }
+
+  const confirmEndDay = async (confirm) => {
+    if (confirm) {
+      await batchDeleteAppointments();
+      setRows([]);
     }
     setShowEndDayPopup(false);
   };
@@ -167,6 +172,10 @@ export default function AppointmentApp() {
     return () => document.removeEventListener("click", handleClickOutside);
   }, [rows]);
 
+  const toggleTheme = () => {
+    setTheme((prev) => (prev === "light" ? "dark" : "light"));
+  };
+
   return (
     <div
       style={{
@@ -195,6 +204,7 @@ export default function AppointmentApp() {
       >
         {theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
       </button>
+
       <h2 style={{ textAlign: "center", marginBottom: 24 }}>
         Appointment Management
       </h2>
@@ -204,10 +214,11 @@ export default function AppointmentApp() {
           display: "grid",
           gridTemplateColumns: "1.5fr 1fr 1fr 1fr",
           fontWeight: "bold",
-          borderBottom: "3px solid #333",
+          borderBottom: theme === "dark" ? "3px solid #ddd" : "3px solid #333",
           paddingBottom: 8,
           marginBottom: 12,
           textAlign: "center",
+          color: theme === "dark" ? "#ddd" : "#000",
         }}
       >
         <div>Client</div>
@@ -233,6 +244,7 @@ export default function AppointmentApp() {
               userSelect: "none",
               alignItems: "center",
               transition: "background-color 0.3s",
+              color: theme === "dark" ? "#f0f0f0" : "#000",
             }}
           >
             <div>{row.client}</div>
@@ -249,17 +261,20 @@ export default function AppointmentApp() {
                 top: "110%",
                 left: "50%",
                 transform: "translateX(-50%)",
-                backgroundColor: "#fff",
+                backgroundColor: theme === "dark" ? "#333" : "#fff",
                 border: "2px solid #000",
                 borderRadius: 8,
                 padding: 16,
-                boxShadow: "0 4px 10px rgba(0,0,0,0.2)",
+                boxShadow:
+                  theme === "dark"
+                    ? "0 4px 10px rgba(255,255,255,0.2)"
+                    : "0 4px 10px rgba(0,0,0,0.2)",
                 display: "flex",
                 gap: 12,
                 zIndex: 100,
-                minWidth: 380,
-                flexWrap: "wrap",
+                minWidth: 280,
                 justifyContent: "center",
+                color: theme === "dark" ? "#fff" : "#000",
               }}
             >
               <button
@@ -281,7 +296,7 @@ export default function AppointmentApp() {
                 Needs Advisor
               </button>
               <button
-                onClick={() => removeRow(index)}
+                onClick={() => deleteRow(index)}
                 style={buttonStyle("#dc3545")}
               >
                 Delete
@@ -321,14 +336,18 @@ export default function AppointmentApp() {
           }}
           style={{
             marginTop: 24,
-            backgroundColor: "#f9f9f9",
+            backgroundColor: theme === "dark" ? "#333" : "#f9f9f9",
             padding: 24,
             border: "2px solid #000",
             borderRadius: 12,
-            boxShadow: "0 4px 10px rgba(0,0,0,0.1)",
+            boxShadow:
+              theme === "dark"
+                ? "0 4px 10px rgba(255,255,255,0.1)"
+                : "0 4px 10px rgba(0,0,0,0.1)",
             maxWidth: 600,
             marginLeft: "auto",
             marginRight: "auto",
+            color: theme === "dark" ? "#eee" : "#000",
           }}
         >
           {["client", "porter", "advisor", "time"].map((field) => (
@@ -357,6 +376,8 @@ export default function AppointmentApp() {
                   fontSize: 16,
                   borderRadius: 8,
                   border: "2px solid #000",
+                  backgroundColor: theme === "dark" ? "#555" : "#fff",
+                  color: theme === "dark" ? "#eee" : "#000",
                 }}
                 required
               />
@@ -411,7 +432,7 @@ export default function AppointmentApp() {
         ref={endDayButtonRef}
         onClick={handleEndDay}
         style={{
-          marginTop: 24,
+          marginTop: 40,
           backgroundColor: "#dc3545",
           color: "white",
           padding: "12px 24px",
@@ -425,7 +446,7 @@ export default function AppointmentApp() {
           marginLeft: "auto",
         }}
       >
-        End Day (Clear All)
+        End Day (Delete All)
       </button>
 
       {showEndDayPopup && (
@@ -433,35 +454,61 @@ export default function AppointmentApp() {
           ref={endDayPopupRef}
           style={{
             position: "fixed",
-            top: "50%",
-            left: "50%",
-            transform: "translate(-50%, -50%)",
-            backgroundColor: "#fff",
-            border: "3px solid #000",
-            borderRadius: 12,
-            padding: 24,
-            boxShadow: "0 6px 20px rgba(0,0,0,0.25)",
+            top: 0,
+            left: 0,
+            width: "100vw",
+            height: "100vh",
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            justifyContent: "center",
+            alignItems: "center",
             zIndex: 200,
-            maxWidth: 380,
-            textAlign: "center",
           }}
         >
-          <p style={{ fontSize: 18, fontWeight: "600", marginBottom: 16 }}>
-            Are you sure you want to clear all appointments for the day?
-          </p>
-          <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
-            <button
-              onClick={() => confirmEndDay(true)}
-              style={buttonStyle("#dc3545")}
-            >
-              Yes, Clear All
-            </button>
-            <button
-              onClick={() => confirmEndDay(false)}
-              style={buttonStyle("#6c757d")}
-            >
-              Cancel
-            </button>
+          <div
+            style={{
+              backgroundColor: theme === "dark" ? "#222" : "#fff",
+              padding: 24,
+              borderRadius: 12,
+              border: "2px solid #000",
+              maxWidth: 400,
+              textAlign: "center",
+              color: theme === "dark" ? "#eee" : "#000",
+            }}
+          >
+            <p style={{ marginBottom: 24, fontWeight: "600", fontSize: 18 }}>
+              Are you sure you want to delete all appointments and end the day?
+            </p>
+            <div style={{ display: "flex", justifyContent: "center", gap: 16 }}>
+              <button
+                onClick={() => confirmEndDay(true)}
+                style={{
+                  backgroundColor: "#dc3545",
+                  color: "white",
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "2px solid #000",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                }}
+              >
+                Yes, Delete All
+              </button>
+              <button
+                onClick={() => confirmEndDay(false)}
+                style={{
+                  backgroundColor: "#6c757d",
+                  color: "white",
+                  padding: "10px 20px",
+                  borderRadius: 8,
+                  border: "2px solid #000",
+                  cursor: "pointer",
+                  fontWeight: "600",
+                }}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -469,19 +516,15 @@ export default function AppointmentApp() {
   );
 }
 
-// Helper styles and functions
-
 function buttonStyle(bgColor) {
   return {
     backgroundColor: bgColor,
+    border: "2px solid #000",
     color: "white",
-    padding: "10px 16px",
-    border: "none",
-    borderRadius: 6,
+    padding: "8px 14px",
+    borderRadius: 8,
     cursor: "pointer",
     fontWeight: "600",
-    minWidth: 110,
-    userSelect: "none",
     transition: "background-color 0.3s",
   };
 }
