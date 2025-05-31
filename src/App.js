@@ -177,7 +177,7 @@ export default function AppointmentApp() {
       }}
     >
       <h2 style={{ textAlign: "center", marginBottom: 24 }}>
-        Appointment Management
+        Appointment Manager v0.1.0
       </h2>
 
       <div
