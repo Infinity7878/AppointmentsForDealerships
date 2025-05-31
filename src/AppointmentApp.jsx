@@ -247,7 +247,8 @@ export default function AppointmentApp() {
                 display: "flex",
                 gap: 12,
                 zIndex: 100,
-                minWidth: 320,
+                minWidth: 380, // Increased width to fit buttons
+                flexWrap: "wrap", // Allow buttons to wrap if needed
                 justifyContent: "center",
               }}
             >
