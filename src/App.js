@@ -5,8 +5,9 @@ import {
   writeBatch,
   doc,
   addDoc,
+  updateDoc, // Fix import here
 } from "firebase/firestore";
-import { db } from "./firebase"; // Make sure your Firestore is initialized here
+import { db } from "./firebase"; // your firestore config
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -24,7 +25,6 @@ export default function AppointmentApp() {
   const endDayButtonRef = useRef(null);
   const rowRefs = useRef([]);
 
-  // Load appointments from Firestore on mount
   useEffect(() => {
     async function fetchAppointments() {
       const snapshot = await getDocs(collection(db, "appointments"));
@@ -53,15 +53,11 @@ export default function AppointmentApp() {
       alert("Please fill all fields.");
       return;
     }
-
-    // Add to Firestore
     try {
       const docRef = await addDoc(collection(db, "appointments"), {
         ...formData,
         status: "pending",
       });
-
-      // Add to local state with Firestore doc ID
       setRows((prev) => [
         ...prev,
         { id: docRef.id, ...formData, status: "pending", showPopup: false },
@@ -82,12 +78,11 @@ export default function AppointmentApp() {
     );
   };
 
-  // Update appointment status both locally and in Firestore
   const updateStatus = async (index, status) => {
     const row = rows[index];
     try {
       const docRef = doc(db, "appointments", row.id);
-      await docRef.update({ status }); // Firestore update
+      await updateDoc(docRef, { status }); // Fixed here!
 
       setRows((prevRows) =>
         prevRows.map((r, i) =>
@@ -102,18 +97,17 @@ export default function AppointmentApp() {
   const getRowStyle = (status) => {
     switch (status) {
       case "helped":
-        return "#cce5ff"; // Light blue
+        return "#cce5ff";
       case "shipped":
-        return "#d4edda"; // Light green
+        return "#d4edda";
       case "pending":
       default:
-        return "#f1b0b7"; // Light red
+        return "#f1b0b7";
     }
   };
 
   const handleEndDay = () => setShowEndDayPopup(true);
 
-  // Batch delete all docs in "appointments" collection
   async function batchDeleteAppointments() {
     try {
       const batch = writeBatch(db);
@@ -444,7 +438,6 @@ export default function AppointmentApp() {
   );
 }
 
-// Helper styles and functions
 const buttonStyle = (bgColor) => ({
   backgroundColor: bgColor,
   color: "white",
