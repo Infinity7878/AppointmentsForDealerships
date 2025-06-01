@@ -9,6 +9,7 @@ import {
   deleteDoc,
 } from "firebase/firestore";
 import { db } from "./firebase"; // your firestore config
+import { onSnapshot } from "firebase/firestore";
 
 export default function AppointmentApp() {
   const [rows, setRows] = useState([]);
@@ -28,16 +29,19 @@ export default function AppointmentApp() {
   const rowRefs = useRef([]);
 
   useEffect(() => {
-    async function fetchAppointments() {
-      const snapshot = await getDocs(collection(db, "appointments"));
-      const appointments = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        showPopup: false,
-      }));
-      setRows(appointments);
-    }
-    fetchAppointments();
+    const unsubscribe = onSnapshot(
+      collection(db, "appointments"),
+      (snapshot) => {
+        const appointments = snapshot.docs.map((doc) => ({
+          id: doc.id,
+          ...doc.data(),
+          showPopup: false,
+        }));
+        setRows(appointments);
+      }
+    );
+
+    return () => unsubscribe(); // clean up the listener on unmount
   }, []);
 
   const handleChange = (e) => {
